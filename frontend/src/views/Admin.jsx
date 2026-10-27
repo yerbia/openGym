@@ -9,7 +9,7 @@ import { confirmSheet } from '../sheets.jsx'
 import Icon from '../components/Icon.jsx'
 import { Button } from '../components/ui.jsx'
 
-// Admin-only operator dashboard (owner passkey + admin flag; guarded again server-side).
+// Admin-only operator dashboard, guarded again server-side.
 // Deliberately English-only — it isn't part of the translated end-user surface, so it stays
 // out of the per-language string packs.
 

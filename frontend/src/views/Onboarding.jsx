@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useStore, hasData } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
-import { webauthnOK, passkeyLogin, passkeyRegister, api, BIO } from '../lib/api.js'
+import { signUp, signIn as signInWithPassword, signInWithGoogle } from '../lib/api.js'
 import { t } from '../lib/i18n.js'
 import { EXIDX } from '../lib/exercises.js'
 import { GOALS, LEVELS, KITS, MODES, MAX_DAYS, MON_FIRST, withDefaults, planFor, commitAnswers, becauseRows } from '../lib/onboard.js'
@@ -31,7 +31,7 @@ const slotOf = step => (step === 'hello' ? 'hello' : step === 'reveal' ? 'centre
 
 // The new-profile flow, replacing the old welcome → create account → goals screens. Peek gets
 // to know you and says what each answer does in the app (lib/onboard.js keeps those lines next
-// to the effects), you choose who makes the plan, and the account comes last — so a passkey
+// to the effects), you choose who makes the plan, and the account comes last.
 // is the last thing asked for, not the first. Answers commit in one update() before any
 // account exists; registering then moves them into it (the hasData → pushState branch below).
 // `resume` = a signed-in profile with nothing in it (see needsGoals): no welcome, no name,
@@ -42,7 +42,7 @@ export default function Onboarding() {
   const { update, setUser, setGuest, pushState, pullState } = useStore.getState()
   const resume = !!user
   // answers committed but no account yet (the app was closed on the account step): pick up there
-  const [step, setStep] = useState(resume ? 'goal' : (S.goal && S.toured === false && webauthnOK()) ? 'save' : 'hello')
+  const [step, setStep] = useState(resume ? 'goal' : (S.goal && S.toured === false) ? 'save' : 'hello')
   const [A, setA] = useState(() => ({ name: user?.name || S.name || '', goal: null, level: null, kit: null, weekdays: [], unit: S.unit, mode: null, account: true }))
   const [line, setLine] = useState(null)        // { text, key } — what Peek is saying
   const [leaving, setLeaving] = useState(false)
@@ -161,26 +161,46 @@ function Bubble({ step, slot, box, text, orb }) {
 
 // D1 — welcome, as it was: the orb hangs off the top looking down at the copy. Create account
 // and Continue without account both go into the questions; the account itself is made at the
-// end (or not at all). Sign in is the passkey sign-in it always was.
+// end (or not at all).
 function Welcome({ onStart }) {
   const { setUser, pullState } = useStore.getState()
+  const [auth, setAuth] = useState(false)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [busy, setBusy] = useState(false)
   const signIn = async () => {
-    try { const u = await passkeyLogin(); setUser(u); await pullState(); toast(t('Welcome back, {0}', u.name)) }
-    catch (e) { if (e.name !== 'NotAllowedError' && e.name !== 'AbortError') toast(e.message || t('Sign-in failed')) }
+    if (!email.trim() || !password) { toast(t('Enter your email and password')); return }
+    setBusy(true)
+    try {
+      const { user: u } = await signInWithPassword(email.trim(), password)
+      const profile = { id: u.id, name: u.user_metadata?.name || u.email?.split('@')[0] || '' }
+      setUser(profile); await pullState(); toast(t('Welcome back, {0}', profile.name))
+    } catch (e) { toast(e.message || t('Sign-in failed')); setBusy(false) }
   }
-  const passkeys = webauthnOK()
+  const google = async () => { try { await signInWithGoogle() } catch (e) { toast(e.message || t('Sign-in failed')) } }
+  if (auth) return <div className="pk-step ob-welcome">
+    <div className="grow" />
+    <div className="pk-hero"><h1>{t('Sign in')}</h1><p>{t('Use your email and password, or continue with Google.')}</p></div>
+    <div className="pk-actions">
+      <input className="input" type="email" autoComplete="email" placeholder={t('Email')} value={email} onChange={e => setEmail(e.target.value)} />
+      <input className="input" type="password" autoComplete="current-password" placeholder={t('Password')} value={password} onChange={e => setPassword(e.target.value)} />
+      <Button variant="primary" disabled={busy} onClick={signIn}>{t('Sign in')}</Button>
+      <Button variant="soft" disabled={busy} onClick={google}>{t('Continue with Google')}</Button>
+      <button className="pk-link" onClick={() => setAuth(false)}>{t('Back')}</button>
+    </div>
+  </div>
   return <div className="pk-step ob-welcome">
     <div className="grow" />
     <div className="pk-hero">
       <h1>{t("Hey. I'll be your coach.")}</h1>
-      <p>{passkeys ? t("Make an account and we'll start with your first session.") : t("This browser doesn't support passkeys — you can still use openGym locally on this device.")}</p>
+      <p>{t("Make an account and we'll start with your first session.")}</p>
     </div>
     <div className="pk-actions">
-      {passkeys ? <>
+      <>
         <Button variant="primary" onClick={() => onStart(true)}>{t('Create account')}</Button>
-        <Button variant="soft" onClick={signIn}>{t('Sign in')}</Button>
+        <Button variant="soft" onClick={() => setAuth(true)}>{t('Sign in')}</Button>
         <button className="pk-link" onClick={() => onStart(false)}>{t('Continue without account')}</button>
-      </> : <Button variant="primary" onClick={() => onStart(false)}>{t('Continue without account')}</Button>}
+      </>
     </div>
   </div>
 }
@@ -291,41 +311,40 @@ function Reveal({ A, plan, orb, say, run, onDone }) {
   </div>
 }
 
-// The account, last. A passkey makes it (registering moves everything answered so far into it,
+// The account, last (registering moves everything answered so far into it,
 // the way the old create-account screen did); "not now" keeps it all on this device as a guest.
 function SaveStep({ name, orb, say, setUser, setGuest, pushState, pullState }) {
-  const [inviteOnly, setInviteOnly] = useState(false)
-  const [code, setCode] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
-  useEffect(() => { api('/api/config').then(c => setInviteOnly(!!c.invite_only)).catch(() => {}) }, [])
   const create = async () => {
     const n = (name || '').trim() || useStore.getState().S.name || ''
     if (!n) { toast(t('Enter a name')); return }
-    if (inviteOnly && !code.trim()) { orb.current?.react('skeptical-left', 1200); say(t('I need the invite code first.')); return }
     setBusy(true)
     orb.current?.react('eyes-closed', 1500)
     try {
-      const u = await passkeyRegister(n, code.trim())
-      setUser(u)
+      if (!email.trim() || password.length < 6) { toast(t('Enter a valid email and a password of at least 6 characters')); setBusy(false); return }
+      const { user: u, session } = await signUp(email.trim(), password, n)
+      if (!session) { toast(t('Check your email to confirm your account')); setBusy(false); return }
+      const profile = { id: u.id, name: n }
+      setUser(profile)
       if (hasData(useStore.getState().S)) await pushState()
       else await pullState()
-      toast(t('Welcome, {0}', u.name))
+      toast(t('Welcome, {0}', n))
     } catch (e) {
-      if (e.name !== 'NotAllowedError' && e.name !== 'AbortError') toast(e.message || t('Registration failed'))
+      toast(e.message || t('Registration failed'))
       setBusy(false)
     }
   }
   return <div className="pk-step ob-save">
     <div className="grow" />
     <div className="pk-actions">
-      {inviteOnly && <>
-        <input className="input" placeholder={t('Invite code')} maxLength={40} value={code} aria-label={t('Invite code')}
-          onChange={e => setCode(e.target.value.toUpperCase())} style={{ letterSpacing: '.14em', fontWeight: 600 }} />
-        <div className="pk-note">{t('This app is invite-only — enter the code you were given.')}</div>
-      </>}
+      <input className="input" type="email" autoComplete="email" placeholder={t('Email')} value={email} onChange={e => setEmail(e.target.value)} />
+      <input className="input" type="password" autoComplete="new-password" placeholder={t('Password')} value={password} onChange={e => setPassword(e.target.value)} />
       <Button variant="primary" icon="key" disabled={busy} onClick={create}>{t('Create account')}</Button>
+      <Button variant="soft" disabled={busy} onClick={async () => { try { await signInWithGoogle() } catch (e) { toast(e.message || t('Registration failed')) } }}>{t('Continue with Google')}</Button>
       <Button variant="soft" disabled={busy} onClick={() => setGuest(true)}>{t('Not now, keep it on this device')}</Button>
-      <div className="pk-note ob-center">{t('You’ll confirm with {0}. The passkey is saved in your device — no password needed, and everything syncs to every device you sign in on.', BIO)}</div>
+      <div className="pk-note ob-center">{t('Your workouts sync securely to your account on every device.')}</div>
     </div>
   </div>
 }

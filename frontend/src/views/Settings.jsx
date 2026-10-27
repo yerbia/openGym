@@ -1,23 +1,23 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useStore, DEF, hasData } from '../store/useStore.js'
+import { useStore, DEF } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
 import { todayISO, localTZ } from '../lib/format.js'
 import { effortOf } from '../lib/history.js'
-import { api, webauthnOK, passkeyLogin, passkeyRegister, IS_ANDROID } from '../lib/api.js'
 import { pushSupported, enablePush, disablePush, sendTestPush } from '../lib/push.js'
 import { wakeLockSupported } from '../lib/wakelock.js'
 import { t, LANGS, INSTR_LANGS } from '../lib/i18n.js'
 import { loadStarterPlan, confirmSheet, importFromApp, gymEquipmentSheet, gymEqLabel } from '../sheets.jsx'
 import Icon from '../components/Icon.jsx'
 import { POSE_MS } from '../components/Media.jsx'
-import { Section, Row, SelectRow, Switch, Segmented, Button, TextField } from '../components/ui.jsx'
+import { Section, Row, SelectRow, Switch, Segmented, Button } from '../components/ui.jsx'
 
 export default function Settings() {
+  const IS_ANDROID = /Android/i.test(navigator.userAgent)
   const nav = useNavigate()
   const S = useStore(s => s.S)
   const user = useStore(s => s.user)
-  const { update, replaceState, setUser, pullState, pushState, signOut, signOutAll } = useStore()
+  const { update, replaceState, pushState, signOut, signOutAll } = useStore()
   const toast = useUI(s => s.toast)
   const fileRef = useRef(null)
   const importRef = useRef(null)
@@ -42,21 +42,16 @@ export default function Settings() {
     }
     rd.readAsText(f)
   }
-  const signInHere = async () => {
-    try { const u = await passkeyLogin(); setUser(u); await pullState(); toast(t('Welcome back, {0}', u.name)) }
-    catch (e) { if (e.name !== 'NotAllowedError' && e.name !== 'AbortError') toast(e.message || t('Sign-in failed')) }
-  }
-  const registerHere = () => useUI.getState().openSheet(close => <RegisterInline close={close} setUser={setUser} pushState={pushState} pullState={pullState} toast={toast} />)
-  // Ends the profile's sessions on every device — this one included, so on success it lands in
+  // Ends the profile's sessions on every device â€” this one included, so on success it lands in
   // the same place as the plain sign-out above (home, local data cleared). On failure nothing
   // local is touched: still signed in here, and say so rather than leaving a half-signed-out app.
   const signOutEverywhere = () => confirmSheet({
     title: t('Sign out everywhere?'),
-    message: t('Signs this profile out on every device, including this one. Your passkeys keep working — sign in with them again anytime.'),
+    message: t('Signs this profile out on every device, including this one.'),
     confirmText: t('Sign out everywhere'), danger: true,
     onConfirm: async () => {
       try { await signOutAll(); nav('/home'); toast(t('Signed out on all devices')) }
-      catch (e) { toast(t('Could not sign out everywhere — you are still signed in.')) }
+      catch (e) { toast(t('Could not sign out everywhere â€” you are still signed in.')) }
     },
   })
 
@@ -69,27 +64,24 @@ export default function Settings() {
     {/* ---------- account ---------- */}
     <Section title={t('Account')}>
       {user ? <>
-        <Row icon="personCircle" iconTint="var(--grey)" title={user.name} subtitle={t('Signed in with passkey — data syncs to this profile.')} />
+        <Row icon="personCircle" iconTint="var(--grey)" title={user.name} subtitle={t('Signed in — data syncs to this profile.')} />
         {user.admin && <Row icon="wrench" iconTint="var(--indigo)" title={t('Admin dashboard')} accessory="chevron" onClick={() => nav('/admin')} />}
         <Row icon="signOut" iconTint="var(--red)" title={t('Sign out')} danger onClick={() => confirmSheet({ title: t('Sign out?'), message: t('Your data is synced to your profile first, then cleared from this device.'), confirmText: t('Sign out'), danger: true, onConfirm: () => { signOut(); nav('/home') } })} />
-        <Row icon="shield" iconTint="var(--red)" title={t('Sign out everywhere')} subtitle={t('Ends this profile’s sessions on all your devices.')} danger onClick={signOutEverywhere} />
-      </> : webauthnOK() ? <>
-        <Row icon="sparkles" iconTint="var(--acc)" title={t('Create passkey profile')} subtitle={t('Keeps your data safe and separate per person.')} accessory="chevron" onClick={registerHere} />
-        <Row icon="person" iconTint="var(--blue)" title={t('Sign in with passkey')} accessory="chevron" onClick={signInHere} />
+        <Row icon="shield" iconTint="var(--red)" title={t('Sign out everywhere')} subtitle={t('Ends this profileâ€™s sessions on all your devices.')} danger onClick={signOutEverywhere} />
       </> : (
-        <Row icon="lock" iconTint="var(--grey)" title={t('Passkeys not supported in this browser.')} />
+        <Row icon="person" iconTint="var(--blue)" title={t('Create an account or sign in')} subtitle={t('Use email and password or Google to sync your workouts.')} accessory="chevron" onClick={() => nav('/home')} />
       )}
     </Section>
-    {!user && <p className="sect-f" style={{ marginTop: -18, marginBottom: 22 }}>{t('Guest mode — data lives only in this browser.')}</p>}
+    {!user && <p className="sect-f" style={{ marginTop: -18, marginBottom: 22 }}>{t('Guest mode â€” data lives only in this browser.')}</p>}
 
     {/* ---------- general ---------- */}
-    <Section title={t('General')} footer={t('Note: switching units only changes the label — logged numbers are not converted.')}>
+    <Section title={t('General')} footer={t('Note: switching units only changes the label â€” logged numbers are not converted.')}>
       <SelectRow
         icon="globe" iconTint="var(--blue)" title={t('Language')}
         value={S.lang || 'en'} onChange={v => update(s => { s.lang = v })}
         options={Object.entries(LANGS).map(([k, name]) => ({
           value: k, label: name,
-          subtitle: INSTR_LANGS.includes(k) ? null : t("Exercise instructions aren't available in this language yet — they stay in English."),
+          subtitle: INSTR_LANGS.includes(k) ? null : t("Exercise instructions aren't available in this language yet â€” they stay in English."),
         }))}
       />
       <Row icon="scale" iconTint="var(--teal)" title={t('Weight unit')}>
@@ -101,11 +93,11 @@ export default function Settings() {
 
     {/* ---------- equipment ---------- */}
     <Section title={t('Equipment')} footer={t('The exercise picker only offers what your gym has.')}>
-      <Row icon="dumbbell" iconTint="var(--acc)" title={t('My gym’s equipment')} value={gymEqLabel(S.gymEq)} accessory="chevron" onClick={gymEquipmentSheet} />
+      <Row icon="dumbbell" iconTint="var(--acc)" title={t('My gymâ€™s equipment')} value={gymEqLabel(S.gymEq)} accessory="chevron" onClick={gymEquipmentSheet} />
     </Section>
 
     {/* ---------- during a workout ---------- */}
-    <Section title={t('During a workout')} footer={wakeOK ? t('The screen stays on while a workout is running, so you don’t have to unlock your phone between sets.') : null}>
+    <Section title={t('During a workout')} footer={wakeOK ? t('The screen stays on while a workout is running, so you donâ€™t have to unlock your phone between sets.') : null}>
       <SelectRow icon="timer" iconTint="var(--orange)" title={t('Rest timer')}
         value={S.restSec} onChange={v => update(s => { s.restSec = v })}
         options={[60, 90, 120, 150, 180].map(v => ({ value: v, label: v + 's' }))} />
@@ -118,7 +110,7 @@ export default function Settings() {
         <Switch checked={!!S.sound} onChange={v => update(s => { s.sound = v })} />
       </Row>
       {/* Two names for the same judgement, so the column asks in the scale you already think in.
-          The (i) sits before the control — you read it on the way to the choice, not after it. */}
+          The (i) sits before the control â€” you read it on the way to the choice, not after it. */}
       <Row icon="target" iconTint="var(--purple)" title={t('Effort per set')}>
         <button className="helpbtn" aria-label={t('What are RIR and RPE?')} onClick={effortHelpSheet}><Icon name="info" /></button>
         <Segmented className="seg-inline"
@@ -149,7 +141,7 @@ export default function Settings() {
           onChange={v => update(s => { s.poseSpeed = v })}
         />
       </Row>
-      {/* Purely how the muscle map is drawn — nothing else in the app reads this. */}
+      {/* Purely how the muscle map is drawn â€” nothing else in the app reads this. */}
       <Row icon="figureStrength" iconTint="var(--teal)" title={t('Body diagram')}>
         <Segmented
           className="seg-inline"
@@ -164,7 +156,7 @@ export default function Settings() {
     <Section title={t('Data')}>
       <Row icon="sparkles" iconTint="var(--acc)" title={t('Load starter plan (PPL)')} accessory="chevron" onClick={loadStarterPlan} />
       <Row icon="shuffle" iconTint="var(--teal)" title={t('Import from another app')}
-        subtitle={t('FitNotes, Strong, Hevy — or body weight from Apple Health')}
+        subtitle={t('FitNotes, Strong, Hevy â€” or body weight from Apple Health')}
         accessory="chevron" onClick={() => importRef.current.click()} />
       <Row icon="upload" iconTint="var(--blue)" title={t('Import backup')} accessory="chevron" onClick={() => fileRef.current.click()} />
       <Row icon="download" iconTint="var(--blue)" title={t('Export backup (JSON)')} accessory="chevron" onClick={doExport} />
@@ -177,28 +169,28 @@ export default function Settings() {
 
     <Section title={t('Tip')}>
       <Row icon="lightbulb" iconTint="var(--yellow)"
-        title={IS_ANDROID ? t('In Chrome: ⋮ menu → Add to Home screen') : t('In Safari: Share → Add to Home Screen')}
-        subtitle={t('to install openGym as a full-screen app.') + ' ' + (user ? t('Your data syncs with your profile — sign in anywhere to see it.') : t('Guest data stays on this device — export a backup now and then!'))} />
+        title={IS_ANDROID ? t('In Chrome: â‹® menu â†’ Add to Home screen') : t('In Safari: Share â†’ Add to Home Screen')}
+        subtitle={t('to install openGym as a full-screen app.') + ' ' + (user ? t('Your data syncs with your profile â€” sign in anywhere to see it.') : t('Guest data stays on this device â€” export a backup now and then!'))} />
     </Section>
 
     <div className="dim small" style={{ textAlign: 'center', marginTop: 4, lineHeight: 1.6 }}>
-      openGym · {t('free & open source (AGPL v3)')}<br />
-      <a href="https://github.com/DuarteSantos8/openGym" target="_blank" rel="noopener">source code</a> · exercise data: hasaneyldrm/exercises-dataset (CC)
+      openGym Â· {t('free & open source (AGPL v3)')}<br />
+      <a href="https://github.com/DuarteSantos8/openGym" target="_blank" rel="noopener">source code</a> Â· exercise data: hasaneyldrm/exercises-dataset (CC)
     </div>
   </div>
 }
 
 // The whole point is that the two scales are one judgement counted from opposite ends, and a
-// paragraph is a bad way to say that — the conversion table shows it in one look. Reading down
+// paragraph is a bad way to say that â€” the conversion table shows it in one look. Reading down
 // a column is the answer to "what do I put here", so the numbers get their own aligned columns.
 const EFFORT_ROWS = [
-  ['0', '10', 'Nothing left — went to failure'],
+  ['0', '10', 'Nothing left â€” went to failure'],
   ['1', '9', 'One more rep in the tank'],
   ['2', '8', 'Two more reps'],
   ['3', '7', 'Three more reps'],
-  ['4+', '≤6', 'Easy — warm-up territory'],
+  ['4+', 'â‰¤6', 'Easy â€” warm-up territory'],
 ]
-// RIR 2 / RPE 8: the row a working set usually lands on — the anchor the others are read
+// RIR 2 / RPE 8: the row a working set usually lands on â€” the anchor the others are read
 // against. Not where the stepper starts; + walks up from the bottom of the scale.
 const EFFORT_TYPICAL = 2
 
@@ -217,8 +209,8 @@ function effortHelpSheet() {
       ))}
     </div>
     <div className="dim small" style={{ lineHeight: 1.5, display: 'grid', gap: 8 }}>
-      <div>{t('RIR counts the reps you left; RPE reads the same effort off a 10-point scale — so RPE ≈ 10 − RIR. Pick the one you already think in.')}</div>
-      <div>{t('The highlighted row is where most working sets land. Sets you have already logged keep their own scale, and nothing else reads the value — progression and estimated 1RM are unaffected.')}</div>
+      <div>{t('RIR counts the reps you left; RPE reads the same effort off a 10-point scale â€” so RPE â‰ˆ 10 âˆ’ RIR. Pick the one you already think in.')}</div>
+      <div>{t('The highlighted row is where most working sets land. Sets you have already logged keep their own scale, and nothing else reads the value â€” progression and estimated 1RM are unaffected.')}</div>
     </div>
     <div style={{ height: 8 }} />
   </>)
@@ -243,7 +235,7 @@ function PushCard({ S, update, toast }) {
     setBusy(false)
   }
   const test = async () => {
-    try { await sendTestPush(); toast(t('Test sent — should arrive any second')) }
+    try { await sendTestPush(); toast(t('Test sent â€” should arrive any second')) }
     catch (e) { toast(e.message || t('Test failed')) }
   }
 
@@ -277,37 +269,5 @@ function PushCard({ S, update, toast }) {
       )}
     </Section>
     {on && <div style={{ marginTop: -12, marginBottom: 22 }}><Button size="sm" icon="bell" onClick={test}>{t('Send test notification')}</Button></div>}
-  </>
-}
-
-// The same registration as the sign-in screen's, reached from Settings instead. It asks for
-// the invite code on the same terms: an invite-only instance rejects a registration without
-// one, so a form that cannot collect it is a form that cannot succeed.
-function RegisterInline({ close, setUser, pushState, pullState, toast }) {
-  const nameRef = useRef(null)
-  const [code, setCode] = useState('')
-  const [inviteOnly, setInviteOnly] = useState(false)
-  useEffect(() => { api('/api/config').then(c => setInviteOnly(!!c.invite_only)).catch(() => {}) }, [])
-  const go = async () => {
-    const n = (nameRef.current.value || '').trim()
-    if (!n) { toast(t('Enter a name')); return }
-    if (inviteOnly && !code.trim()) { toast(t('An invite code is required')); return }
-    try {
-      const u = await passkeyRegister(n, code.trim()); setUser(u); close()
-      if (hasData(useStore.getState().S)) { await pushState(); toast(t('Profile created — data moved into it')) }
-      else { await pullState(); toast(t('Welcome, {0}', u.name)) }
-    } catch (e) { if (e.name !== 'NotAllowedError' && e.name !== 'AbortError') toast(e.message || t('Registration failed')) }
-  }
-  return <>
-    <h3>{t('Create your profile')}</h3>
-    <div className="muted small" style={{ marginBottom: 14 }}>{t('Pick a name, then confirm with your device.')}</div>
-    <TextField ref={nameRef} placeholder={t('Your name')} maxLength={40} />
-    {inviteOnly && <>
-      <div style={{ height: 10 }} />
-      <input className="input" placeholder={t('Invite code')} maxLength={40} value={code}
-        onChange={e => setCode(e.target.value.toUpperCase())} style={{ letterSpacing: '.14em', fontWeight: 600, textAlign: 'center' }} />
-      <div className="dim small" style={{ marginTop: 6 }}>{t('This app is invite-only — enter the code you were given.')}</div>
-    </>}
-    <div style={{ height: 12 }} /><Button variant="primary" onClick={go}>{t('Create passkey')}</Button>
   </>
 }
