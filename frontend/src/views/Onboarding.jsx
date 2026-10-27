@@ -192,7 +192,7 @@ function Welcome({ onStart }) {
   return <div className="pk-step ob-welcome">
     <div className="grow" />
     <div className="pk-hero">
-      <h1>{t("Hey. I'll be your coach.")}</h1>
+      <h1>{t("Hola. Seré tu entrenador.")}</h1>
       <p>{t("Make an account and we'll start with your first session.")}</p>
     </div>
     <div className="pk-actions">
